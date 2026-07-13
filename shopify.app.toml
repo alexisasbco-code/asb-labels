@@ -1,13 +1,14 @@
 # Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
 
 name = "asb-labels"
-application_url = "https://shopify.dev/apps/default-app-home"
+application_url = "https://alexisasbco-code.github.io/asb-labels/"
 embedded = true
 client_id = "50edfaf57785eda5b7c6074a6e1a9b63"
 
 [build]
-include_config_on_deploy = true
-automatically_update_urls_on_dev = true
+# Off so `shopify app dev` can't overwrite the production URL above.
+# (Dev still works — say NO if the CLI asks to update URLs.)
+automatically_update_urls_on_dev = false
 
 [webhooks]
 api_version = "2026-10"
@@ -25,4 +26,4 @@ optional_scopes = [ ]
 use_legacy_install_flow = false
 
 [auth]
-redirect_urls = [ "https://shopify.dev/apps/default-app-home/api/auth" ]
+redirect_urls = [ "https://alexisasbco-code.github.io/asb-labels/" ]
