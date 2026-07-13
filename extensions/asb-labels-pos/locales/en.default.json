@@ -1,0 +1,7 @@
+{
+  "name": "Print Label",
+  "tile_heading": "Print Label",
+  "tile_subheading": "Scan item → Zebra",
+  "modal_heading": "Print Label",
+  "welcome": "Scan an item to print its label"
+}

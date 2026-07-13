@@ -5,7 +5,8 @@
   "private": true,
   "author": "alexisharris",
   "workspaces": [
-    "web"
+    "web",
+    "extensions/*"
   ],
   "scripts": {
     "shopify": "shopify",
@@ -19,5 +20,8 @@
   },
   "trustedDependencies": [
     "@shopify/plugin-cloudflare"
-  ]
+  ],
+  "devDependencies": {
+    "@shopify/ui-extensions": "~2026.1.0"
+  }
 }
