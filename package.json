@@ -1,0 +1,23 @@
+{
+  "name": "asb-labels",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "private": true,
+  "author": "alexisharris",
+  "workspaces": [
+    "web"
+  ],
+  "scripts": {
+    "shopify": "shopify",
+    "dev": "shopify app dev",
+    "info": "shopify app info",
+    "deploy": "shopify app deploy",
+    "build:web": "npm run build --workspace web"
+  },
+  "dependencies": {
+    "@shopify/cli": "4.4.0"
+  },
+  "trustedDependencies": [
+    "@shopify/plugin-cloudflare"
+  ]
+}

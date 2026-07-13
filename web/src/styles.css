@@ -1,0 +1,106 @@
+/* ---- App chrome (screen only) ------------------------------------------ */
+:root {
+  --stock-w: 3.5in;    /* our stock: 1-1/8" x 3-1/2", landscape */
+  --stock-h: 1.125in;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font: 14px/1.45 -apple-system, system-ui, sans-serif;
+  color: #202223;
+  background: #f6f6f7;
+}
+.topbar {
+  background: #fff; border-bottom: 1px solid #e1e3e5;
+  padding: 12px 20px; display: flex; align-items: center; gap: 16px;
+  position: sticky; top: 0; z-index: 5;
+}
+.topbar h1 { font-size: 16px; font-weight: 650; margin: 0; }
+.topbar .sub { color: #6d7175; font-size: 13px; }
+main { padding: 16px 20px 40px; max-width: 980px; }
+
+.card {
+  background: #fff; border: 1px solid #e1e3e5; border-radius: 12px;
+  padding: 16px; margin-bottom: 16px;
+}
+.card h2 { font-size: 14px; font-weight: 650; margin: 0 0 10px; }
+
+button {
+  font: inherit; font-weight: 600; cursor: pointer;
+  padding: 8px 16px; border: 0; border-radius: 8px;
+  background: #202223; color: #fff;
+}
+button.secondary { background: #fff; color: #202223; border: 1px solid #c9cccf; }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.status { color: #6d7175; font-size: 13px; margin: 8px 0; }
+.error { color: #b91c1c; }
+
+/* Shipment picker rows */
+.shipment-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  text-align: left; background: #fff; color: inherit; font-weight: 500;
+  border: 1px solid #e1e3e5; border-radius: 10px; padding: 10px 14px; margin-bottom: 8px;
+}
+.shipment-row:hover { border-color: #8c9196; }
+.shipment-row .name { font-weight: 650; min-width: 90px; }
+.dim { color: #6d7175; font-size: 13px; }
+.badge {
+  font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px;
+  background: #e4e5e7; color: #202223; text-transform: lowercase;
+}
+.badge.received { background: #cdfee1; color: #0c5132; }
+.badge.partial  { background: #ffef9d; color: #5e4200; }
+
+/* Line-item table */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #eef0f1; }
+th { color: #6d7175; font-weight: 600; font-size: 12px; }
+td.num, th.num { text-align: right; }
+td input[type="number"] { width: 60px; font: inherit; padding: 4px 6px; }
+.nobarcode { color: #b91c1c; font-weight: 650; font-size: 12px; }
+
+.printbar { display: flex; align-items: center; gap: 14px; margin-top: 14px; }
+.printbar .count { color: #6d7175; font-size: 13px; }
+
+/* ---- Labels (shared with the prototype's layout) ------------------------ */
+.print-sheet { display: none; }
+/* Two zones: text left (long names + variants wrap), barcode right.
+   The barcode zone is 1.7in wide → ~15mil Code128 modules: easy scanning. */
+.label {
+  width: var(--stock-w); height: var(--stock-h);
+  background: #fff;
+  padding: 0.06in 0.09in;
+  display: flex; flex-direction: row; align-items: stretch; gap: 0.09in;
+  overflow: hidden;
+}
+.label .text {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; justify-content: center; gap: 0.03in;
+}
+.label .style {
+  font-weight: 700; font-size: 9.5pt; line-height: 1.12; letter-spacing: -0.1px;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;                 /* long product names: 2 lines, then … */
+}
+.label .meta {
+  font-size: 7.5pt; color: #222; line-height: 1.15;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;                 /* 2–3 option values + SKU: 2 lines */
+}
+.label .barcode {
+  flex: 0 0 1.7in; min-width: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+/* labelCell() gives the svg a viewBox, so this scales cleanly (no stretch). */
+.label .barcode svg { width: 100%; height: 100%; }
+
+/* ---- Print: hide the app, show only labels at exact stock size ---------- */
+@media print {
+  body { background: #fff; }
+  .topbar, main { display: none !important; }
+  .print-sheet { display: block; }
+  @page { size: var(--stock-w) var(--stock-h); margin: 0; }
+  .label { page-break-after: always; break-after: page; }
+  .label:last-child { page-break-after: auto; break-after: auto; }
+}
