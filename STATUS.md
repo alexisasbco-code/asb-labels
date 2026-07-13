@@ -60,15 +60,29 @@ labels only from shipment acceptedQuantity.
 - Verified standalone in a browser: shell renders, no JS errors ("Failed to
   fetch" outside admin is expected — `shopify:` protocol needs App Bridge).
 
-## Next
-1. **One-time interactive link (needs Alexis' terminal):**
-   `cd ~/Desktop/asb-labels/asb-labels && npm run dev -- --store=asb-bins-dev.myshopify.com`
-   → pick org → create as new app "asb-labels" → CLI writes client_id.
-   (Non-interactive runs fail on the org prompt — already tried.)
-2. Open the app in the dev store admin, verify shipments load, print preview.
-3. Dev store (from bins): **asb-bins-dev.myshopify.com** — needs transfers +
-   shipments with accepted quantities to test against (create test data if bare).
-4. **Deploy** static bundle to free host; set `application_url`.
+## DEPLOYED ✅ (2026-07-12)
+- **Production URL:** https://alexisasbco-code.github.io/asb-labels/
+  (GitHub Pages, repo https://github.com/alexisasbco-code/asb-labels,
+  branch main, folder /docs — uploaded via web drag-and-drop, no local git creds)
+- `application_url` + `redirect_urls` point there; version "asb-labels-2"
+  released via `shopify app deploy --allow-updates`.
+- `automatically_update_urls_on_dev = false` — dev sessions must NOT overwrite
+  the prod URL (answer NO if the CLI asks to update URLs).
+- Direct API pinned to **2026-07** in `adminFetch`. Client_id baked into the
+  build via `web/.env` (public value, safe).
+
+## Release process (app updates)
+1. Edit code → `npm run build:web` (outputs to repo-root `docs/`)
+2. Push `docs/` to GitHub (drag-and-drop upload or `git push` once creds exist)
+3. Page updates in ~1 min. `shopify app deploy` only needed for config/scope changes.
+
+## Remaining
+1. Reload app in dev-store admin with `npm run dev` STOPPED — confirms prod hosting.
+2. Install on the REAL store: dev.shopify.com dashboard → asb-labels →
+   Distribution → Custom distribution → enter store domain → install link.
+3. **Zebra test:** print label #1, scan it back (put-away screen). Tune barcode
+   zone (`flex: 0 0 1.7in`) if needed.
+4. Real catalog: watch for ⚠ NO BARCODE rows (variants missing UPCs).
 
 ## Phase 5 (do before trusting a full run)
 Print label #1 on the ZD421, scan it with the POS put-away screen, confirm it

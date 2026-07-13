@@ -113,21 +113,17 @@ function labelCell(row) {
     format: "CODE128",
     width: 2,
     height: 48,
-    margin: 0,
+    margin: 8,        // quiet zone around the bars — scanners need it
     displayValue: true,
     fontSize: 13,
     textMargin: 2,
   });
-  // JsBarcode emits fixed pixel width/height and no viewBox, so CSS scaling
-  // distorts. Convert to a viewBox so the svg scales cleanly into its zone.
-  const w = svg.getAttribute("width");
-  const h = svg.getAttribute("height");
-  if (w && h) {
-    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
-    svg.removeAttribute("width");
-    svg.removeAttribute("height");
-    svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
-  }
+  // JsBarcode emits a valid viewBox but ALSO fixed "NNNpx" width/height
+  // attributes, which pin the svg to raw pixel size (clipping in the 1.7in
+  // zone). Strip them so the viewBox scales the barcode to fit.
+  svg.removeAttribute("width");
+  svg.removeAttribute("height");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   return el;
 }
 
