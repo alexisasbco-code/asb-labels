@@ -17,7 +17,8 @@ export default defineConfig({
     hmr: {protocol: "ws", host: "localhost", port},
   },
   // GitHub Pages serves from a subpath (github.io/<repo>/), so use relative
-  // asset URLs and build into docs/ (the folder Pages can publish from main).
+  // asset URLs and build into the REPO-ROOT docs/ folder — the only
+  // subfolder GitHub Pages can publish from a branch.
   base: "./",
-  build: {outDir: "docs"},
+  build: {outDir: "../docs", emptyOutDir: true},
 });
