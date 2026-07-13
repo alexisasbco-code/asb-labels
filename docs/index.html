@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASB Labels</title>
+  <!-- App Bridge needs the app's client_id; Shopify CLI injects it via
+       SHOPIFY_API_KEY when running `shopify app dev` (see vite.config.js). -->
+  <meta name="shopify-api-key" content="50edfaf57785eda5b7c6074a6e1a9b63" />
+  <script src="https://cdn.shopify.com/shopifycloud/app-bridge.js"></script>
+  <script src="./vendor/JsBarcode.all.min.js"></script>
+  <script type="module" crossorigin src="./assets/index-BModg5Ks.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-D3X4v-Ox.css">
+</head>
+<body>
+  <div id="app"></div>
+  <!-- Print target: filled with .label cells right before window.print() -->
+  <div id="print-sheet" class="print-sheet" aria-hidden="true"></div>
+</body>
+</html>
