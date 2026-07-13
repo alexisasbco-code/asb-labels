@@ -70,6 +70,8 @@ async function fetchShipmentLines(id) {
                 id
                 title
                 barcode
+                price
+                compareAtPrice
                 selectedOptions { name value }
                 product { title }
               }
@@ -86,24 +88,44 @@ async function fetchShipmentLines(id) {
 // ---------------------------------------------------------------------------
 // Label rendering (same layout as label-preview.html)
 // ---------------------------------------------------------------------------
+// Stacked layout (fits long names + shows price): name across the full
+// width on top, a variant + price row, then a full-width barcode. Giving the
+// name the whole 3.5in — instead of half — is what lets long titles fit.
 function labelCell(row) {
   const el = document.createElement("div");
   el.className = "label";
 
-  // Left zone: name (wraps to 2 lines) + variant/SKU (wraps to 2 lines).
-  const text = document.createElement("div");
-  text.className = "text";
   const style = document.createElement("div");
   style.className = "style";
   style.textContent = row.style || "—";
-  text.appendChild(style);
+  el.appendChild(style);
+
+  // Middle row: variant/SKU on the left, price block on the right.
+  const mid = document.createElement("div");
+  mid.className = "mid";
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = row.meta || "";
-  text.appendChild(meta);
-  el.appendChild(text);
+  mid.appendChild(meta);
 
-  // Right zone: the barcode.
+  const price = document.createElement("div");
+  price.className = "price";
+  if (row.retail) {
+    const was = document.createElement("span");
+    was.className = "retail";
+    was.textContent = money(row.retail);   // struck-through
+    price.appendChild(was);
+  }
+  if (row.price != null) {
+    const now = document.createElement("span");
+    now.className = "now";
+    now.textContent = money(row.price);     // bold
+    price.appendChild(now);
+  }
+  mid.appendChild(price);
+  el.appendChild(mid);
+
+  // Full-width barcode along the bottom.
   const wrap = document.createElement("div");
   wrap.className = "barcode";
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -112,15 +134,13 @@ function labelCell(row) {
   JsBarcode(svg, String(row.barcode).trim(), {
     format: "CODE128",
     width: 2,
-    height: 48,
-    margin: 8,        // quiet zone around the bars — scanners need it
+    height: 40,
+    margin: 6,        // quiet zone around the bars — scanners need it
     displayValue: true,
     fontSize: 13,
     textMargin: 2,
   });
-  // JsBarcode emits a valid viewBox but ALSO fixed "NNNpx" width/height
-  // attributes, which pin the svg to raw pixel size (clipping in the 1.7in
-  // zone). Strip them so the viewBox scales the barcode to fit.
+  // JsBarcode pins a fixed px width/height; strip so the viewBox scales it.
   svg.removeAttribute("width");
   svg.removeAttribute("height");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
@@ -141,11 +161,38 @@ const state = {
   error: "",
 };
 
+// Real variant descriptors only. Excludes "Default Title" and any legacy
+// option literally named "Retail" (some products store MSRP as an option —
+// that belongs in the price block, not the variant line).
 function describeVariant(v) {
   return (v?.selectedOptions || [])
-    .filter((o) => o.value && o.value !== "Default Title")
+    .filter((o) => o.value && o.value !== "Default Title" && !/retail/i.test(o.name))
     .map((o) => o.value)
     .join(" · ");
+}
+
+function money(n) {
+  return `$${Number(n).toFixed(2)}`;
+}
+
+// Price + markdown for a variant. Source of truth is Shopify's price /
+// compareAtPrice. Fallback: a legacy option named "Retail" holding "$xx.xx".
+// Marked down = a retail value strictly greater than the selling price.
+function priceInfo(v) {
+  const price = parseFloat(v?.price);
+  let retail = v?.compareAtPrice != null ? parseFloat(v.compareAtPrice) : NaN;
+  if (!(retail > 0)) {
+    const opt = (v?.selectedOptions || []).find((o) => /retail/i.test(o.name));
+    if (opt) {
+      const n = parseFloat(String(opt.value).replace(/[^0-9.]/g, ""));
+      if (n > 0) retail = n;
+    }
+  }
+  const markedDown = price > 0 && retail > price + 0.001;
+  return {
+    price: price > 0 ? price : null,
+    retail: markedDown ? retail : null,
+  };
 }
 
 function fmtDate(iso) {
@@ -180,10 +227,13 @@ async function openShipment(id) {
     const s = await fetchShipmentLines(id);
     const rows = (s?.lineItems?.nodes || []).map((li) => {
       const v = li.inventoryItem?.variant;
+      const p = priceInfo(v);
       return {
         style: v?.product?.title || li.inventoryItem?.sku || "Unknown item",
         meta: [describeVariant(v), li.inventoryItem?.sku].filter(Boolean).join("  ·  "),
         barcode: (v?.barcode || "").trim(),
+        price: p.price,
+        retail: p.retail,
         accepted: li.acceptedQuantity,
         qty: li.acceptedQuantity,   // printable count, editable per row
       };

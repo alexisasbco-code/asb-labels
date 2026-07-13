@@ -76,6 +76,16 @@ labels only from shipment acceptedQuantity.
 2. Push `docs/` to GitHub (drag-and-drop upload or `git push` once creds exist)
 3. Page updates in ~1 min. `shopify app deploy` only needed for config/scope changes.
 
+## POS tile — single-item reprint (built 2026-07-12, awaiting PrintNode creds)
+`extensions/asb-labels-pos/` — scan/type barcode or SKU → variant lookup
+(Direct API) → qty stepper → native **ZPL** (Code128, mirrors label layout,
+710×228 dots @203dpi) → POST api.printnode.com `raw_base64` → PrintNode client
+on the Mac → ZD421. CORS verified open. To finish:
+1. Get a dedicated PrintNode API key + the ZD421's numeric printer id
+   (PrintNode client must run on the Mac the Zebra is attached to).
+2. Paste into the constants at the top of `src/Modal.jsx`, `npm run deploy`.
+3. ZPL positions (^FO/^FB/^BY) may need one tuning pass on real stock.
+
 ## Remaining
 1. Reload app in dev-store admin with `npm run dev` STOPPED — confirms prod hosting.
 2. Install on the REAL store: dev.shopify.com dashboard → asb-labels →

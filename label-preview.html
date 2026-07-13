@@ -39,26 +39,29 @@
   .sheet { padding: 18px; display: flex; flex-wrap: wrap; gap: 10px; background: #f6f6f7; }
 
   /* One physical label. Fixed to the stock size so screen == paper.
-     Two zones: text left (long names + variants wrap), barcode right. */
+     Stacked: name (full width) → variant + price → full-width barcode. */
   .label {
     width: var(--stock-w); height: var(--stock-h);
     background: #fff; border: 1px solid #e1e1e1;   /* border is screen-only, see @media print */
-    padding: 0.06in 0.09in;
-    display: flex; flex-direction: row; align-items: stretch; gap: 0.09in;
+    padding: 0.05in 0.09in;
+    display: flex; flex-direction: column; gap: 0.02in;
     overflow: hidden;
   }
-  .label .text    { flex: 1 1 auto; min-width: 0;
-                    display: flex; flex-direction: column; justify-content: center; gap: 0.03in; }
-  .label .style   { font-weight: 700; font-size: 9.5pt; line-height: 1.12; letter-spacing: -0.1px;
+  .label .style   { font-weight: 700; font-size: 10pt; line-height: 1.1; letter-spacing: -0.1px;
                     overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
                     -webkit-line-clamp: 2; }
-  .label .meta    { font-size: 7.5pt; color: #222; line-height: 1.15;
+  .label .mid     { display: flex; align-items: flex-end; justify-content: space-between; gap: 0.1in; }
+  .label .meta    { flex: 1 1 auto; min-width: 0;
+                    font-size: 7.5pt; color: #222; line-height: 1.12;
                     overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
                     -webkit-line-clamp: 2; }
-  .label .barcode { flex: 0 0 1.7in; min-width: 0;
+  .label .price   { flex: 0 0 auto; display: flex; align-items: baseline; gap: 0.06in; white-space: nowrap; }
+  .label .price .retail { font-size: 8pt; color: #555; text-decoration: line-through; }
+  .label .price .now    { font-size: 13pt; font-weight: 800; letter-spacing: -0.3px; }
+  .label .barcode { flex: 1 1 auto; min-height: 0;
                     display: flex; align-items: center; justify-content: center; }
-  .label .barcode svg { width: 100%; height: 100%; }
-  .label .missing { flex: 0 0 1.7in; display: flex; align-items: center; justify-content: center;
+  .label .barcode svg { width: 100%; height: 100%; max-height: 0.55in; }
+  .label .missing { flex: 1 1 auto; display: flex; align-items: center; justify-content: center;
                     color: #b00; font-size: 8pt; font-weight: 600; text-align: center;
                     border: 1px dashed #e0a; border-radius: 4px; }
 
@@ -105,14 +108,18 @@
   // --- Sample rows: stand in for shipment line items. -------------------
   // Each row = one variant with an accepted quantity. `qty` labels get
   // printed. `barcode` is the UPC that becomes the Code128; blank = flagged.
-  // Realistic worst cases: long product names + 2–3 long variant values + SKU.
+  // Realistic worst cases: long names, markdowns, full-price, no barcode.
+  // retail set + retail>price = marked down (struck retail + bold price);
+  // retail null = just the price.
   const SAMPLE_ROWS = [
-    { style: "The 3p Fulfilled Snowboard",                        meta: "155cm · Wide · Midnight Blue · SNB-3PF-155W",  barcode: "190910123456", qty: 2 },
-    { style: "Patagonia Women's Down Sweater Hoody Insulated",    meta: "Pigeon Blue · Medium · PAT-DSH-W-PB-M",        barcode: "889587654321", qty: 2 },
-    { style: "Smartwool Hike Light Cushion Crew",                 meta: "Grey · L · SW-HLC-GRY-L",                      barcode: "042000998877", qty: 1 },
-    { style: "Nordica Speedmachine 3 130 S GW Ski Boots",         meta: "27.5 · Black/Anthracite/Red · NOR-SM3-275",    barcode: "827569483726", qty: 1 },
-    { style: "Darn Tough Hiker",                                  meta: "Olive · S · DT-HKR-S",                         barcode: "",             qty: 1 }, // <- missing barcode
+    { style: "2026 North Face Freedom Insulated Kids Jacket",     meta: "Dusk Blue/Meridian Blue · 3T · TNF-FRE-3T",   barcode: "190910123456", price: 59.94,  retail: 120.00, qty: 2 }, // marked down
+    { style: "Union Cadet Youth Snowboard Bindings",             meta: "Purple · Medium · 810120335032",              barcode: "810120335032", price: 149.95, retail: null,   qty: 1 }, // full price
+    { style: "Patagonia Women's Down Sweater Hoody Insulated",   meta: "Pigeon Blue · Medium · PAT-DSH-W-PB-M",       barcode: "889587654321", price: 189.00, retail: 279.00, qty: 1 }, // long name + markdown
+    { style: "Smartwool Hike Light Cushion Crew",                meta: "Grey · L · SW-HLC-GRY-L",                     barcode: "042000998877", price: 23.95,  retail: null,   qty: 1 },
+    { style: "Darn Tough Hiker",                                 meta: "Olive · S · DT-HKR-S",                        barcode: "",             price: 25.00,  retail: null,   qty: 1 }, // missing barcode
   ];
+
+  function money(n) { return "$" + Number(n).toFixed(2); }
 
   const STOCK = {
     "3.5x1.125": ["3.5in", "1.125in"],   // our stock (1-1/8" × 3-1/2")
@@ -140,26 +147,43 @@
     }
   }
 
-  // Build one label. This is the piece that gets reused in the real app:
-  // feed it a { style, meta, barcode } and it renders a print-ready cell.
+  // Build one label. Mirrors the real app's labelCell():
+  // { style, meta, barcode, price, retail } → print-ready stacked cell.
   function labelCell(row, barWidth, showVal) {
     const el = document.createElement("div");
     el.className = "label";
 
-    // Left zone: name (2 lines max) + variants/SKU (2 lines max).
-    const text = document.createElement("div");
-    text.className = "text";
+    // Name, full width.
     const style = document.createElement("div");
     style.className = "style";
     style.textContent = row.style || "—";
-    text.appendChild(style);
+    el.appendChild(style);
+
+    // Middle row: variant/SKU left, price block right.
+    const mid = document.createElement("div");
+    mid.className = "mid";
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = row.meta || "";
-    text.appendChild(meta);
-    el.appendChild(text);
+    mid.appendChild(meta);
+    const price = document.createElement("div");
+    price.className = "price";
+    if (row.retail && row.retail > row.price) {
+      const was = document.createElement("span");
+      was.className = "retail";
+      was.textContent = money(row.retail);
+      price.appendChild(was);
+    }
+    if (row.price != null) {
+      const now = document.createElement("span");
+      now.className = "now";
+      now.textContent = money(row.price);
+      price.appendChild(now);
+    }
+    mid.appendChild(price);
+    el.appendChild(mid);
 
-    // Right zone: the barcode.
+    // Full-width barcode along the bottom.
     if (row.barcode && String(row.barcode).trim()) {
       const wrap = document.createElement("div");
       wrap.className = "barcode";

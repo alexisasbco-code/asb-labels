@@ -66,34 +66,42 @@ td input[type="number"] { width: 60px; font: inherit; padding: 4px 6px; }
 /* ---- Labels (shared with the prototype's layout) ------------------------ */
 .print-sheet { display: none; }
 /* Two zones: text left (long names + variants wrap), barcode right.
-   The barcode zone is 1.7in wide → ~15mil Code128 modules: easy scanning. */
+   Stacked: name (full width, up to 2 lines) → variant + price row →
+   full-width barcode. Giving the name the whole width is what fits long
+   titles that the old half-width split was clipping. */
 .label {
   width: var(--stock-w); height: var(--stock-h);
   background: #fff;
-  padding: 0.06in 0.09in;
-  display: flex; flex-direction: row; align-items: stretch; gap: 0.09in;
+  padding: 0.05in 0.09in;
+  display: flex; flex-direction: column; gap: 0.02in;
   overflow: hidden;
 }
-.label .text {
-  flex: 1 1 auto; min-width: 0;
-  display: flex; flex-direction: column; justify-content: center; gap: 0.03in;
-}
 .label .style {
-  font-weight: 700; font-size: 9.5pt; line-height: 1.12; letter-spacing: -0.1px;
+  font-weight: 700; font-size: 10pt; line-height: 1.1; letter-spacing: -0.1px;
   overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;                 /* long product names: 2 lines, then … */
 }
-.label .meta {
-  font-size: 7.5pt; color: #222; line-height: 1.15;
-  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;                 /* 2–3 option values + SKU: 2 lines */
+.label .mid {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 0.1in;
 }
+.label .meta {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 7.5pt; color: #222; line-height: 1.12;
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;                 /* color · size · SKU */
+}
+.label .price {
+  flex: 0 0 auto; display: flex; align-items: baseline; gap: 0.06in;
+  white-space: nowrap;
+}
+.label .price .retail { font-size: 8pt; color: #555; text-decoration: line-through; }
+.label .price .now { font-size: 13pt; font-weight: 800; letter-spacing: -0.3px; }
 .label .barcode {
-  flex: 0 0 1.7in; min-width: 0;
+  flex: 1 1 auto; min-height: 0;
   display: flex; align-items: center; justify-content: center;
 }
 /* labelCell() gives the svg a viewBox, so this scales cleanly (no stretch). */
-.label .barcode svg { width: 100%; height: 100%; }
+.label .barcode svg { width: 100%; height: 100%; max-height: 0.55in; }
 
 /* ---- Print: hide the app, show only labels at exact stock size ---------- */
 @media print {
