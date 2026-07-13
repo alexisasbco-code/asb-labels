@@ -30,6 +30,16 @@ Root cause of the v1 overlap: JsBarcode emits fixed px width/height and no
 viewBox, so CSS stretching distorted it — `labelCell()` now converts to a
 viewBox. Keep `label-preview.html` and `web/src/{app.js,styles.css}` in sync.
 
+## Label template v3 (2026-07-13, after first Zebra prints)
+Stacked layout: name full-width (up to 2 lines) → variant/SKU + price row →
+full-width barcode. Fixes long-name clipping (old half-width split starved the
+text). Price: reads `price` + `compareAtPrice`; marked down (compareAt > price)
+= struck retail + bold price, else price only. Fallback to a legacy "Retail"
+variant option if compareAtPrice is empty. "Retail" option excluded from the
+variant line. **UNVERIFIED against real data** — connector was down; confirm
+whether ASB retail lives in compareAtPrice or the Retail option on first real
+print, and consider migrating to compareAtPrice.
+
 ## Working in dev store ✅ (2026-07-12)
 App linked (client_id 50edfaf...), scopes restored + `read_inventory_shipments`
 added (missing scopes HIDE fields from the schema — that was the

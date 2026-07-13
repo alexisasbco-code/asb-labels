@@ -161,12 +161,22 @@ const state = {
   error: "",
 };
 
-// Real variant descriptors only. Excludes "Default Title" and any legacy
-// option literally named "Retail" (some products store MSRP as an option —
-// that belongs in the price block, not the variant line).
+// Real variant descriptors only (color · size). Excludes "Default Title" and
+// any legacy MSRP that some products carry as an option — whether it's the
+// option NAME ("Retail") or the VALUE ("Retail: $280.00" / "$280.00"). Price
+// belongs in the price block, not the variant line. A money value = has a "$"
+// or a .dd decimal; bare sizes like "90mm", "155", "27.5" are kept.
+function looksLikePrice(s) {
+  return /\$/.test(s) || /\d\.\d{2}\b/.test(s) || /retail/i.test(s);
+}
 function describeVariant(v) {
   return (v?.selectedOptions || [])
-    .filter((o) => o.value && o.value !== "Default Title" && !/retail/i.test(o.name))
+    .filter((o) =>
+      o.value &&
+      o.value !== "Default Title" &&
+      !/retail|price/i.test(o.name) &&
+      !looksLikePrice(o.value)
+    )
     .map((o) => o.value)
     .join(" · ");
 }
@@ -230,7 +240,10 @@ async function openShipment(id) {
       const p = priceInfo(v);
       return {
         style: v?.product?.title || li.inventoryItem?.sku || "Unknown item",
-        meta: [describeVariant(v), li.inventoryItem?.sku].filter(Boolean).join("  ·  "),
+        // Label variant line = color · size only. The SKU/barcode number
+        // already prints under the barcode, so don't repeat it here.
+        meta: describeVariant(v),
+        sku: li.inventoryItem?.sku || "",   // shown in the on-screen table only
         barcode: (v?.barcode || "").trim(),
         price: p.price,
         retail: p.retail,
@@ -306,7 +319,7 @@ function render() {
         (r, i) => `
       <tr>
         <td>${r.style}</td>
-        <td>${r.meta || "—"}</td>
+        <td>${[r.meta, r.sku].filter(Boolean).join(" · ") || "—"}</td>
         <td class="num">${r.accepted}</td>
         <td class="num"><input type="number" min="0" max="999" value="${r.qty}" data-qty="${i}" ${r.barcode ? "" : "disabled"} /></td>
         <td>${r.barcode ? r.barcode : '<span class="nobarcode">⚠ NO BARCODE</span>'}</td>
