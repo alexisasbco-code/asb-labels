@@ -88,9 +88,10 @@ async function fetchShipmentLines(id) {
 // ---------------------------------------------------------------------------
 // Label rendering (same layout as label-preview.html)
 // ---------------------------------------------------------------------------
-// Stacked layout (fits long names + shows price): name across the full
-// width on top, a variant + price row, then a full-width barcode. Giving the
-// name the whole 3.5in — instead of half — is what lets long titles fit.
+// Layout: title across the full width on top, then a row of
+//   [ variant + price stacked, left ] [ barcode, right ].
+// Price lives in the left column so it can never be clipped at the right edge;
+// the barcode (with its quiet zone) owns the right side.
 function labelCell(row) {
   const el = document.createElement("div");
   el.className = "label";
@@ -100,13 +101,16 @@ function labelCell(row) {
   style.textContent = row.style || "—";
   el.appendChild(style);
 
-  // Middle row: variant/SKU on the left, price block on the right.
-  const mid = document.createElement("div");
-  mid.className = "mid";
+  const body = document.createElement("div");
+  body.className = "body";
+
+  // Left column: variant (1 line) then the price block under it.
+  const info = document.createElement("div");
+  info.className = "info";
   const meta = document.createElement("div");
   meta.className = "meta";
   meta.textContent = row.meta || "";
-  mid.appendChild(meta);
+  info.appendChild(meta);
 
   const price = document.createElement("div");
   price.className = "price";
@@ -122,15 +126,17 @@ function labelCell(row) {
     now.textContent = money(row.price);     // bold
     price.appendChild(now);
   }
-  mid.appendChild(price);
-  el.appendChild(mid);
+  info.appendChild(price);
+  body.appendChild(info);
 
-  // Full-width barcode along the bottom.
+  // Right: barcode.
   const wrap = document.createElement("div");
   wrap.className = "barcode";
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   wrap.appendChild(svg);
-  el.appendChild(wrap);
+  body.appendChild(wrap);
+  el.appendChild(body);
+
   JsBarcode(svg, String(row.barcode).trim(), {
     format: "CODE128",
     width: 2,

@@ -43,25 +43,24 @@
   .label {
     width: var(--stock-w); height: var(--stock-h);
     background: #fff; border: 1px solid #e1e1e1;   /* border is screen-only, see @media print */
-    padding: 0.05in 0.09in;
+    padding: 0.05in 0.12in;
     display: flex; flex-direction: column; gap: 0.02in;
     overflow: hidden;
   }
   .label .style   { flex: 0 0 auto; font-weight: 700; font-size: 9.5pt; line-height: 1.08; letter-spacing: -0.1px;
                     overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
                     -webkit-line-clamp: 2; }
-  .label .mid     { flex: 0 0 auto; display: flex; align-items: flex-end; justify-content: space-between; gap: 0.1in; }
-  .label .meta    { flex: 1 1 auto; min-width: 0;
-                    font-size: 7.5pt; color: #222; line-height: 1.1;
+  .label .body    { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: row; align-items: center; gap: 0.12in; }
+  .label .info    { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 0.02in; }
+  .label .meta    { font-size: 7.5pt; color: #222; line-height: 1.1;
                     overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  .label .price   { flex: 0 0 auto; display: flex; align-items: baseline; gap: 0.06in; white-space: nowrap; }
+  .label .price   { display: flex; align-items: baseline; gap: 0.06in; white-space: nowrap; }
   .label .price .retail { font-size: 8pt; color: #555; text-decoration: line-through; }
-  .label .price .now    { font-size: 12pt; font-weight: 800; letter-spacing: -0.3px; }
-  /* Barcode gets a RESERVED band so a long name/meta can never squeeze it out. */
-  .label .barcode { flex: 0 0 0.5in; min-height: 0;
+  .label .price .now    { font-size: 13pt; font-weight: 800; letter-spacing: -0.3px; }
+  .label .barcode { flex: 0 0 1.55in; align-self: stretch; min-width: 0;
                     display: flex; align-items: center; justify-content: center; }
-  .label .barcode svg { width: 100%; height: 100%; }
-  .label .missing { flex: 0 0 0.5in; display: flex; align-items: center; justify-content: center;
+  .label .barcode svg { width: 100%; height: 100%; max-height: 0.62in; }
+  .label .missing { flex: 0 0 1.55in; align-self: stretch; display: flex; align-items: center; justify-content: center;
                     color: #b00; font-size: 8pt; font-weight: 600; text-align: center;
                     border: 1px dashed #e0a; border-radius: 4px; }
 
@@ -148,7 +147,7 @@
   }
 
   // Build one label. Mirrors the real app's labelCell():
-  // { style, meta, barcode, price, retail } → print-ready stacked cell.
+  // title on top, then [ variant + price | barcode ].
   function labelCell(row, barWidth, showVal) {
     const el = document.createElement("div");
     el.className = "label";
@@ -159,13 +158,16 @@
     style.textContent = row.style || "—";
     el.appendChild(style);
 
-    // Middle row: variant/SKU left, price block right.
-    const mid = document.createElement("div");
-    mid.className = "mid";
+    const body = document.createElement("div");
+    body.className = "body";
+
+    // Left column: variant then price under it.
+    const info = document.createElement("div");
+    info.className = "info";
     const meta = document.createElement("div");
     meta.className = "meta";
     meta.textContent = row.meta || "";
-    mid.appendChild(meta);
+    info.appendChild(meta);
     const price = document.createElement("div");
     price.className = "price";
     if (row.retail && row.retail > row.price) {
@@ -180,16 +182,17 @@
       now.textContent = money(row.price);
       price.appendChild(now);
     }
-    mid.appendChild(price);
-    el.appendChild(mid);
+    info.appendChild(price);
+    body.appendChild(info);
+    el.appendChild(body);
 
-    // Full-width barcode along the bottom.
+    // Right column: barcode.
     if (row.barcode && String(row.barcode).trim()) {
       const wrap = document.createElement("div");
       wrap.className = "barcode";
       const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       wrap.appendChild(svg);
-      el.appendChild(wrap);
+      body.appendChild(wrap);
       try {
         JsBarcode(svg, String(row.barcode).trim(), {
           format: "CODE128",
@@ -214,7 +217,7 @@
       const miss = document.createElement("div");
       miss.className = "missing";
       miss.textContent = "⚠ NO BARCODE";
-      el.appendChild(miss);
+      body.appendChild(miss);
     }
     return el;
   }
