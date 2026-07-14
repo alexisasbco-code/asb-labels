@@ -19,11 +19,11 @@ async function adminFetch(query, variables) {
 // from a SHIPMENT's accepted quantities — the transfer is just context, so
 // "still incoming" items never get labels. (Requires read_inventory_transfers
 // + read_inventory_shipments; missing scopes HIDE these fields from the schema.)
-async function fetchTransfers() {
+async function fetchTransfers(searchText) {
   const data = await adminFetch(
     `#graphql
-    query RecentTransfersWithShipments {
-      inventoryTransfers(first: 25, reverse: true) {
+    query RecentTransfersWithShipments($q: String) {
+      inventoryTransfers(first: 50, reverse: true, query: $q) {
         nodes {
           id
           name
@@ -45,9 +45,21 @@ async function fetchTransfers() {
         }
       }
     }`,
-    {}
+    {q: searchText || null}
   );
   return data?.inventoryTransfers?.nodes || [];
+}
+
+// Search transfers. Server-side query first (reaches past the recent 50);
+// if the API's free-text match comes up empty, fall back to fetching recent
+// and filtering by name locally so "T0541" still finds "#T0541".
+async function searchTransfers(text) {
+  const clean = text.replace(/^#/, "").trim();
+  const hits = await fetchTransfers(clean);
+  if (hits.length) return hits;
+  const recent = await fetchTransfers(null);
+  const needle = clean.toLowerCase();
+  return recent.filter((t) => (t.name || "").toLowerCase().includes(needle));
 }
 
 async function fetchShipmentLines(id) {
@@ -161,11 +173,19 @@ const printSheet = document.getElementById("print-sheet");
 
 const state = {
   transfers: null,     // null = loading
+  search: "",          // transfer search text
   shipment: null,      // selected shipment w/ line items
-  rows: [],            // [{style, meta, barcode, accepted, qty}]
+  rows: [],            // [{style, meta, barcode, accepted, qty, selected}]
   message: "",
   error: "",
 };
+
+// Escape text that gets interpolated into innerHTML (titles come from the catalog).
+function esc(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
 
 // Real variant descriptors only (color · size). Excludes "Default Title" and
 // any legacy MSRP that some products carry as an option — whether it's the
@@ -226,8 +246,12 @@ async function loadTransfers() {
   state.error = "";
   render();
   try {
-    state.transfers = await fetchTransfers();
-    state.message = state.transfers.length ? "" : "No transfers found.";
+    state.transfers = state.search
+      ? await searchTransfers(state.search)
+      : await fetchTransfers(null);
+    state.message = state.transfers.length
+      ? ""
+      : (state.search ? `No transfers matching “${state.search}”.` : "No transfers found.");
   } catch (err) {
     state.transfers = [];
     state.error = `Couldn't load transfers: ${err.message}`;
@@ -255,6 +279,7 @@ async function openShipment(id) {
         retail: p.retail,
         accepted: li.acceptedQuantity,
         qty: li.acceptedQuantity,   // printable count, editable per row
+        selected: true,             // checkbox: include this row when printing
       };
     });
     state.shipment = s;
@@ -267,7 +292,7 @@ async function openShipment(id) {
 }
 
 function printLabels() {
-  const printable = state.rows.filter((r) => r.qty > 0 && r.barcode);
+  const printable = state.rows.filter((r) => r.selected && r.qty > 0 && r.barcode);
   printSheet.innerHTML = "";
   for (const row of printable) {
     for (let i = 0; i < row.qty; i++) printSheet.appendChild(labelCell(row));
@@ -276,7 +301,7 @@ function printLabels() {
 }
 
 function labelCount() {
-  return state.rows.reduce((n, r) => n + (r.barcode ? r.qty : 0), 0);
+  return state.rows.reduce((n, r) => n + (r.selected && r.barcode ? r.qty : 0), 0);
 }
 
 function render() {
@@ -315,34 +340,45 @@ function render() {
             })
             .join("");
     body = `
+      <form class="searchbar" data-searchform>
+        <input id="tsearch" type="search" placeholder="Search transfer # (e.g. T0541)" value="${esc(state.search)}" />
+        <button type="submit">Search</button>
+        ${state.search ? `<button type="button" class="secondary" data-clearsearch>Clear</button>` : ""}
+      </form>
       <div class="status">Labels print from what was <b>accepted</b> on a shipment — items still incoming never print.</div>
       ${list}
       <button class="secondary" data-refresh>Refresh</button>`;
   } else {
-    // ---- Line-item table ----
+    // ---- Line-item table (checkbox column: print only what's selected) ----
+    const allSelected = rows.length > 0 && rows.every((r) => r.selected);
+    const selectedCount = rows.filter((r) => r.selected).length;
     const tr = rows
       .map(
         (r, i) => `
-      <tr>
-        <td>${r.style}</td>
-        <td>${[r.meta, r.sku].filter(Boolean).join(" · ") || "—"}</td>
+      <tr class="${r.selected ? "" : "unselected"}">
+        <td class="chk"><input type="checkbox" data-check="${i}" ${r.selected ? "checked" : ""} /></td>
+        <td>${esc(r.style)}</td>
+        <td>${esc([r.meta, r.sku].filter(Boolean).join(" · ")) || "—"}</td>
         <td class="num">${r.accepted}</td>
-        <td class="num"><input type="number" min="0" max="999" value="${r.qty}" data-qty="${i}" ${r.barcode ? "" : "disabled"} /></td>
-        <td>${r.barcode ? r.barcode : '<span class="nobarcode">⚠ NO BARCODE</span>'}</td>
+        <td class="num"><input type="number" min="0" max="999" value="${r.qty}" data-qty="${i}" ${r.barcode && r.selected ? "" : "disabled"} /></td>
+        <td>${r.barcode ? esc(r.barcode) : '<span class="nobarcode">⚠ NO BARCODE</span>'}</td>
       </tr>`
       )
       .join("");
     body = `
       <div class="card">
-        <h2>${shipment.name} ${statusBadge(shipment.status)}</h2>
+        <h2>${esc(shipment.name)} ${statusBadge(shipment.status)}</h2>
         <table>
-          <thead><tr><th>Style</th><th>Variant · SKU</th><th class="num">Accepted</th><th class="num">Print</th><th>Barcode</th></tr></thead>
+          <thead><tr>
+            <th class="chk"><input type="checkbox" data-checkall ${allSelected ? "checked" : ""} title="Select all / none" /></th>
+            <th>Style</th><th>Variant · SKU</th><th class="num">Accepted</th><th class="num">Print</th><th>Barcode</th>
+          </tr></thead>
           <tbody>${tr}</tbody>
         </table>
         <div class="printbar">
           <button data-print ${labelCount() ? "" : "disabled"}>Print ${labelCount()} label${labelCount() === 1 ? "" : "s"}</button>
           <button class="secondary" data-back>← Shipments</button>
-          <span class="count">3-1/2 × 1-1/8 in · Code128 · one label per unit</span>
+          <span class="count">${selectedCount} of ${rows.length} items selected · 3-1/2 × 1-1/8 in · Code128</span>
         </div>
       </div>`;
   }
@@ -361,6 +397,23 @@ function render() {
 
 // Event delegation for the whole app.
 app.addEventListener("click", (e) => {
+  const check = e.target.closest("[data-check]");
+  if (check) {
+    state.rows[Number(check.dataset.check)].selected = check.checked;
+    render();
+    return;
+  }
+  const checkAll = e.target.closest("[data-checkall]");
+  if (checkAll) {
+    const on = checkAll.checked;
+    state.rows.forEach((r) => { r.selected = on; });
+    render();
+    return;
+  }
+  if (e.target.closest("[data-clearsearch]")) {
+    state.search = "";
+    return loadTransfers();
+  }
   const open = e.target.closest("[data-open]");
   if (open) return openShipment(open.dataset.open);
   if (e.target.closest("[data-refresh]")) return loadTransfers();
@@ -371,6 +424,14 @@ app.addEventListener("click", (e) => {
     return;
   }
   if (e.target.closest("[data-print]")) return printLabels();
+});
+// Search submits on Enter or the Search button.
+app.addEventListener("submit", (e) => {
+  if (e.target.closest("[data-searchform]")) {
+    e.preventDefault();
+    state.search = (document.getElementById("tsearch")?.value || "").trim();
+    loadTransfers();
+  }
 });
 app.addEventListener("input", (e) => {
   const qty = e.target.closest("[data-qty]");

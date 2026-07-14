@@ -36,6 +36,19 @@ button:disabled { opacity: 0.45; cursor: default; }
 .status { color: #6d7175; font-size: 13px; margin: 8px 0; }
 .error { color: #b91c1c; }
 
+/* Transfer search */
+.searchbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.searchbar input[type="search"] {
+  flex: 1 1 auto; font: inherit; padding: 8px 12px;
+  border: 1px solid #c9cccf; border-radius: 8px; background: #fff;
+}
+
+/* Row-selection checkboxes */
+th.chk, td.chk { width: 30px; padding-right: 0; }
+input[type="checkbox"] { width: 16px; height: 16px; accent-color: #202223; cursor: pointer; }
+tr.unselected td { color: #9ca0a4; }
+tr.unselected td:not(.chk) { opacity: 0.6; }
+
 /* Shipment picker rows */
 .shipment-row {
   display: flex; align-items: center; gap: 12px; width: 100%;
