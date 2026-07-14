@@ -17,6 +17,10 @@ body {
 }
 .topbar h1 { font-size: 16px; font-weight: 650; margin: 0; }
 .topbar .sub { color: #6d7175; font-size: 13px; }
+.topbar .version {
+  margin-left: auto; font-size: 11px; font-weight: 650; color: #6d7175;
+  border: 1px solid #e1e3e5; border-radius: 999px; padding: 2px 8px;
+}
 main { padding: 16px 20px 40px; max-width: 980px; }
 
 .card {
@@ -132,4 +136,7 @@ td input[type="number"] { width: 60px; font: inherit; padding: 4px 6px; }
   .print-sheet { display: block; }
   .label { margin: 0; page-break-after: always; break-after: page; }
   .label:last-child { page-break-after: auto; break-after: auto; }
+  /* Slightly shorter than the 1.125in page so printer-dpi rounding can never
+     spill a label across two pages (the blank-page failure mode). */
+  .label { height: 1.08in; }
 }

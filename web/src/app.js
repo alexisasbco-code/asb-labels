@@ -1,6 +1,10 @@
 // ASB Labels — print a Code128 label per ACCEPTED unit on a received shipment.
 // Runs embedded in Shopify admin. Direct API access via App Bridge — no backend.
 
+// Shown in the topbar so it's always obvious WHICH deploy the browser loaded
+// (GitHub Pages + the admin iframe cache aggressively). Bump on every deploy.
+const APP_VERSION = "v6";
+
 // ---------------------------------------------------------------------------
 // Shopify Admin API (Direct API access — same helper as the bins app)
 // ---------------------------------------------------------------------------
@@ -387,6 +391,7 @@ function render() {
     <div class="topbar">
       <h1>Print Received Labels</h1>
       <span class="sub">from accepted shipment quantities — not the transfer</span>
+      <span class="version">${APP_VERSION}</span>
     </div>
     <main>
       ${error ? `<div class="status error">${error}</div>` : ""}
