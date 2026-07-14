@@ -65,10 +65,12 @@
                     border: 1px dashed #e0a; border-radius: 4px; }
 
   /* ---- Print: only labels, exact stock size, one label per page ------- */
+  /* The @page rule is injected by render() with LITERAL sizes — var() does
+     not work inside @page and the browser silently drops the rule. */
   @media print {
     .controls { display: none !important; }
     .sheet { padding: 0; gap: 0; background: #fff; display: block; }
-    @page { size: var(--stock-w) var(--stock-h); margin: 0; }
+    html, body { margin: 0 !important; padding: 0 !important; }
     .label {
       border: 0;                       /* no visible border on thermal */
       page-break-after: always;
@@ -131,6 +133,16 @@
     const [w, h] = STOCK[document.getElementById("stock").value];
     document.documentElement.style.setProperty("--stock-w", w);
     document.documentElement.style.setProperty("--stock-h", h);
+
+    // @page must get LITERAL sizes (var() is silently dropped inside @page,
+    // which made labels print with default margins → title-only + blanks).
+    let pageStyle = document.getElementById("pagestyle");
+    if (!pageStyle) {
+      pageStyle = document.createElement("style");
+      pageStyle.id = "pagestyle";
+      document.head.appendChild(pageStyle);
+    }
+    pageStyle.textContent = `@media print { @page { size: ${w} ${h}; margin: 0; } }`;
 
     const barWidth = parseFloat(document.getElementById("barw").value) || 1.4;
     const showVal = document.getElementById("showval").checked;
