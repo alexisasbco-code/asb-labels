@@ -110,7 +110,9 @@ td input[type="number"] { width: 60px; font: inherit; padding: 4px 6px; }
 }
 .label .meta {
   font-size: 7.5pt; color: #222; line-height: 1.1;
-  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;  /* one line */
+  overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;      /* long variants wrap to a 2nd line, then … */
+  overflow-wrap: anywhere;    /* wraps even unbroken slash-strings */
 }
 .label .price {
   display: flex; align-items: baseline; gap: 0.06in; white-space: nowrap;

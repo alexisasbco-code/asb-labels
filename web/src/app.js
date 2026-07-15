@@ -3,7 +3,7 @@
 
 // Shown in the topbar so it's always obvious WHICH deploy the browser loaded
 // (GitHub Pages + the admin iframe cache aggressively). Bump on every deploy.
-const APP_VERSION = "v6";
+const APP_VERSION = "v7";
 
 // ---------------------------------------------------------------------------
 // Shopify Admin API (Direct API access — same helper as the bins app)
