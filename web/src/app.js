@@ -3,7 +3,7 @@
 
 // Shown in the topbar so it's always obvious WHICH deploy the browser loaded
 // (GitHub Pages + the admin iframe cache aggressively). Bump on every deploy.
-const APP_VERSION = "v7";
+const APP_VERSION = "v8";
 
 // ---------------------------------------------------------------------------
 // Shopify Admin API (Direct API access — same helper as the bins app)
@@ -66,39 +66,101 @@ async function searchTransfers(text) {
   return recent.filter((t) => (t.name || "").toLowerCase().includes(needle));
 }
 
+// Fetches ALL line items, following pageInfo across pages. The old single
+// `first: 250` call silently dropped every line past #250 — big shipments
+// (400–800 units) under-printed with no warning. Returns the shipment with a
+// flat `lines` array instead of the raw connection.
 async function fetchShipmentLines(id) {
-  const data = await adminFetch(
-    `#graphql
-    query ShipmentLabels($id: ID!) {
-      inventoryShipment(id: $id) {
-        id
-        name
-        status
-        lineItems(first: 250) {
-          nodes {
-            id
-            quantity
-            acceptedQuantity
-            rejectedQuantity
-            inventoryItem {
-              sku
-              variant {
-                id
-                title
-                barcode
-                price
-                compareAtPrice
-                selectedOptions { name value }
-                product { title }
+  let shipment = null;
+  let after = null;
+  do {
+    const data = await adminFetch(
+      `#graphql
+      query ShipmentLabels($id: ID!, $after: String) {
+        inventoryShipment(id: $id) {
+          id
+          name
+          status
+          lineItems(first: 250, after: $after) {
+            pageInfo { hasNextPage endCursor }
+            nodes {
+              id
+              quantity
+              acceptedQuantity
+              rejectedQuantity
+              inventoryItem {
+                sku
+                variant {
+                  id
+                  title
+                  barcode
+                  price
+                  compareAtPrice
+                  selectedOptions { name value }
+                  product { title }
+                }
               }
             }
           }
         }
-      }
-    }`,
-    {id}
-  );
-  return data?.inventoryShipment || null;
+      }`,
+      {id, after}
+    );
+    const s = data?.inventoryShipment;
+    if (!s) return shipment;
+    if (!shipment) shipment = {id: s.id, name: s.name, status: s.status, lines: []};
+    shipment.lines.push(...(s.lineItems?.nodes || []));
+    const pi = s.lineItems?.pageInfo;
+    after = pi?.hasNextPage ? pi.endCursor : null;
+  } while (after);
+  return shipment;
+}
+
+// ---------------------------------------------------------------------------
+// Printed-label memory (localStorage on the label-printing Mac)
+// ---------------------------------------------------------------------------
+// Shipments get received in several sessions (more boxes arrive days or weeks
+// apart) but acceptedQuantity is CUMULATIVE — so "print accepted" would
+// re-print everything from earlier sessions. We remember how many labels were
+// printed per shipment line so the Print column can default to just the delta:
+// accepted − already printed. Lives in localStorage: per-browser, which is
+// fine because printing only happens on the Mac wired to the Zebra.
+const PRINTED_KEY = "asb-labels:printed:v1";
+const PRINTED_TTL_MS = 200 * 24 * 3600 * 1000; // forget lines after ~6 months
+
+function loadPrinted() {
+  try {
+    return JSON.parse(localStorage.getItem(PRINTED_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+function savePrinted(map) {
+  try {
+    const cutoff = Date.now() - PRINTED_TTL_MS;
+    for (const k of Object.keys(map)) {
+      if (!map[k] || map[k].t < cutoff) delete map[k];
+    }
+    localStorage.setItem(PRINTED_KEY, JSON.stringify(map));
+  } catch {
+    // Storage unavailable (private mode / blocked iframe storage): deltas
+    // just won't persist; printing still works.
+  }
+}
+function printedCount(lineId) {
+  return loadPrinted()[lineId]?.n || 0;
+}
+function recordPrinted(rows) {
+  const map = loadPrinted();
+  for (const r of rows) {
+    map[r.lineId] = {n: (map[r.lineId]?.n || 0) + r.qty, t: Date.now()};
+  }
+  savePrinted(map);
+}
+function forgetPrinted(rows) {
+  const map = loadPrinted();
+  for (const r of rows) delete map[r.lineId];
+  savePrinted(map);
 }
 
 // ---------------------------------------------------------------------------
@@ -263,31 +325,40 @@ async function loadTransfers() {
   render();
 }
 
+// One table row per shipment line. Print qty defaults to the DELTA
+// (accepted − already printed here) so a second receive session prints only
+// what was just scanned — not duplicates of the first session's labels.
+function lineToRow(li, shipName) {
+  const v = li.inventoryItem?.variant;
+  const p = priceInfo(v);
+  const accepted = li.acceptedQuantity;
+  const printed = printedCount(li.id);
+  return {
+    lineId: li.id,
+    ship: shipName || "",
+    style: v?.product?.title || li.inventoryItem?.sku || "Unknown item",
+    // Label variant line = color · size only. The SKU/barcode number
+    // already prints under the barcode, so don't repeat it here.
+    meta: describeVariant(v),
+    sku: li.inventoryItem?.sku || "",   // shown in the on-screen table only
+    barcode: (v?.barcode || "").trim(),
+    price: p.price,
+    retail: p.retail,
+    accepted,
+    printed,
+    qty: Math.max(0, accepted - printed),  // editable per row
+    selected: true,             // checkbox: include this row when printing
+  };
+}
+
 async function openShipment(id) {
   state.message = "Loading shipment…";
   state.error = "";
   render();
   try {
     const s = await fetchShipmentLines(id);
-    const rows = (s?.lineItems?.nodes || []).map((li) => {
-      const v = li.inventoryItem?.variant;
-      const p = priceInfo(v);
-      return {
-        style: v?.product?.title || li.inventoryItem?.sku || "Unknown item",
-        // Label variant line = color · size only. The SKU/barcode number
-        // already prints under the barcode, so don't repeat it here.
-        meta: describeVariant(v),
-        sku: li.inventoryItem?.sku || "",   // shown in the on-screen table only
-        barcode: (v?.barcode || "").trim(),
-        price: p.price,
-        retail: p.retail,
-        accepted: li.acceptedQuantity,
-        qty: li.acceptedQuantity,   // printable count, editable per row
-        selected: true,             // checkbox: include this row when printing
-      };
-    });
     state.shipment = s;
-    state.rows = rows;
+    state.rows = (s?.lines || []).map((li) => lineToRow(li));
     state.message = "";
   } catch (err) {
     state.error = `Couldn't load shipment: ${err.message}`;
@@ -295,13 +366,60 @@ async function openShipment(id) {
   render();
 }
 
+// "All shipments" safety net: one combined table for every shipment on the
+// transfer, so nothing is missed when a transfer arrived as several
+// shipments. Rows keep their shipment name for the on-screen table.
+async function openTransfer(id) {
+  const t = (state.transfers || []).find((x) => x.id === id);
+  const ships = t?.shipments?.nodes || [];
+  state.message = `Loading ${ships.length} shipment${ships.length === 1 ? "" : "s"}…`;
+  state.error = "";
+  render();
+  try {
+    const rows = [];
+    for (const sh of ships) {
+      const s = await fetchShipmentLines(sh.id);
+      for (const li of s?.lines || []) rows.push(lineToRow(li, s.name));
+    }
+    state.shipment = {name: `${t?.name || "Transfer"} — all shipments`, status: t?.status || ""};
+    state.rows = rows;
+    state.message = "";
+  } catch (err) {
+    state.error = `Couldn't load transfer: ${err.message}`;
+  }
+  render();
+}
+
 function printLabels() {
   const printable = state.rows.filter((r) => r.selected && r.qty > 0 && r.barcode);
   printSheet.innerHTML = "";
+  const bad = [];
   for (const row of printable) {
-    for (let i = 0; i < row.qty; i++) printSheet.appendChild(labelCell(row));
+    try {
+      // Render the first label OUTSIDE the per-unit loop so a barcode
+      // JsBarcode can't encode skips just that row (and gets reported)
+      // instead of aborting the whole print run mid-sheet.
+      const first = labelCell(row);
+      printSheet.appendChild(first);
+      for (let i = 1; i < row.qty; i++) printSheet.appendChild(labelCell(row));
+    } catch (err) {
+      bad.push(row);
+      continue;
+    }
+  }
+  const ok = printable.filter((r) => !bad.includes(r));
+  const total = ok.reduce((n, r) => n + r.qty, 0);  // before qty resets to the new delta
+  recordPrinted(ok);   // remember so next session's default is just the delta
+  for (const r of ok) {
+    r.printed = printedCount(r.lineId);
+    r.qty = Math.max(0, r.accepted - r.printed);  // table now shows the new delta
   }
   window.print();
+  state.message = `Sent ${total} label${total === 1 ? "" : "s"} (${ok.length} item${ok.length === 1 ? "" : "s"}) to the printer.`;
+  state.error = bad.length
+    ? `⚠ ${bad.length} item${bad.length === 1 ? "" : "s"} SKIPPED — barcode couldn't be encoded: ${bad.map((r) => r.sku || r.style).join(", ")}`
+    : "";
+  render();
 }
 
 function labelCount() {
@@ -334,12 +452,17 @@ function render() {
                     )
                     .join("")
                 : `<div class="status">Nothing received yet — labels print once a shipment is received.</div>`;
+              const allBtn =
+                ships.length > 1
+                  ? `<button class="secondary allships" data-opentransfer="${t.id}">All ${ships.length} shipments combined</button>`
+                  : "";
               return `
         <div class="card">
           <h2>${t.name} ${statusBadge(t.status)}
             <span class="dim" style="font-weight:500">&nbsp; ${t.origin?.name || "?"} → ${t.destination?.name || "?"} · ${fmtDate(t.dateCreated)}</span>
           </h2>
           ${shipRows}
+          ${allBtn}
         </div>`;
             })
             .join("");
@@ -356,14 +479,17 @@ function render() {
     // ---- Line-item table (checkbox column: print only what's selected) ----
     const allSelected = rows.length > 0 && rows.every((r) => r.selected);
     const selectedCount = rows.filter((r) => r.selected).length;
+    const showShip = rows.some((r) => r.ship);   // combined all-shipments view
+    const anyPrinted = rows.some((r) => r.printed > 0);
     const tr = rows
       .map(
         (r, i) => `
       <tr class="${r.selected ? "" : "unselected"}">
         <td class="chk"><input type="checkbox" data-check="${i}" ${r.selected ? "checked" : ""} /></td>
         <td>${esc(r.style)}</td>
-        <td>${esc([r.meta, r.sku].filter(Boolean).join(" · ")) || "—"}</td>
+        <td>${esc([showShip ? r.ship : "", r.meta, r.sku].filter(Boolean).join(" · ")) || "—"}</td>
         <td class="num">${r.accepted}</td>
+        <td class="num${r.printed ? "" : " dim"}">${r.printed}</td>
         <td class="num"><input type="number" min="0" max="999" value="${r.qty}" data-qty="${i}" ${r.barcode && r.selected ? "" : "disabled"} /></td>
         <td>${r.barcode ? esc(r.barcode) : '<span class="nobarcode">⚠ NO BARCODE</span>'}</td>
       </tr>`
@@ -372,16 +498,18 @@ function render() {
     body = `
       <div class="card">
         <h2>${esc(shipment.name)} ${statusBadge(shipment.status)}</h2>
+        ${anyPrinted ? `<div class="status">Print counts default to <b>accepted − already printed</b>, so a repeat receive session only prints the new units. Use “Forget printed” to reprint everything.</div>` : ""}
         <table>
           <thead><tr>
             <th class="chk"><input type="checkbox" data-checkall ${allSelected ? "checked" : ""} title="Select all / none" /></th>
-            <th>Style</th><th>Variant · SKU</th><th class="num">Accepted</th><th class="num">Print</th><th>Barcode</th>
+            <th>Style</th><th>${showShip ? "Shipment · " : ""}Variant · SKU</th><th class="num">Accepted</th><th class="num">Printed</th><th class="num">Print</th><th>Barcode</th>
           </tr></thead>
           <tbody>${tr}</tbody>
         </table>
         <div class="printbar">
           <button data-print ${labelCount() ? "" : "disabled"}>Print ${labelCount()} label${labelCount() === 1 ? "" : "s"}</button>
           <button class="secondary" data-back>← Shipments</button>
+          ${anyPrinted ? `<button class="secondary" data-resetprinted title="Clear the printed-label memory for these rows so Print resets to the full accepted count">Forget printed</button>` : ""}
           <span class="count">${selectedCount} of ${rows.length} items selected · 3-1/2 × 1-1/8 in · Code128</span>
         </div>
       </div>`;
@@ -421,6 +549,17 @@ app.addEventListener("click", (e) => {
   }
   const open = e.target.closest("[data-open]");
   if (open) return openShipment(open.dataset.open);
+  const openAll = e.target.closest("[data-opentransfer]");
+  if (openAll) return openTransfer(openAll.dataset.opentransfer);
+  if (e.target.closest("[data-resetprinted]")) {
+    forgetPrinted(state.rows);
+    state.rows.forEach((r) => {
+      r.printed = 0;
+      r.qty = r.accepted;
+    });
+    render();
+    return;
+  }
   if (e.target.closest("[data-refresh]")) return loadTransfers();
   if (e.target.closest("[data-back]")) {
     state.shipment = null;
@@ -440,7 +579,17 @@ app.addEventListener("submit", (e) => {
 });
 app.addEventListener("input", (e) => {
   const qty = e.target.closest("[data-qty]");
-  if (qty) state.rows[Number(qty.dataset.qty)].qty = Math.max(0, Number(qty.value) || 0);
+  if (qty) {
+    state.rows[Number(qty.dataset.qty)].qty = Math.max(0, Number(qty.value) || 0);
+    // Refresh the print button in place (a full render() would steal focus
+    // from the input mid-typing).
+    const btn = app.querySelector("[data-print]");
+    if (btn) {
+      const n = labelCount();
+      btn.textContent = `Print ${n} label${n === 1 ? "" : "s"}`;
+      btn.disabled = !n;
+    }
+  }
 });
 
 loadTransfers();

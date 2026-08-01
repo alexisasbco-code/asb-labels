@@ -1,5 +1,24 @@
 # asb-labels — build status
 
+## v8 (2026-07-31) — under-printing fixes (T0602 / T0586 incident)
+Two shipments (400 & 800 units) under-printed. Root causes + fixes:
+1. **`lineItems(first: 250)` silently truncated big shipments** — every line
+   past #250 never appeared. Now paginates via `pageInfo` until exhausted.
+2. **Repeat receive sessions had no delta** — `acceptedQuantity` is cumulative,
+   so reprint sessions showed the full total, and staff hand-computing the
+   delta missed items. Now the app remembers labels printed per shipment line
+   (localStorage on the printing Mac, ~6-month TTL) and the Print column
+   defaults to accepted − already printed. "Forget printed" button resets.
+   Caveat: memory is per-browser — print from the same Mac/browser (the one
+   wired to the Zebra), and counts record even if the print dialog is
+   cancelled (use Forget printed to redo).
+3. New **"All N shipments combined"** button per transfer — safety net that
+   prints every shipment on a transfer in one table.
+4. A barcode JsBarcode can't encode now skips just that row (reported in an
+   error banner) instead of aborting the whole print run.
+Verified against a stubbed Admin API (300-line shipment → 2 pages, delta
+session, forget-reset, combined view).
+
 Replacing Yannit with our own Shopify label printer. Print a Code128 label for
 each **accepted** unit on a received **shipment** (not the whole transfer).
 

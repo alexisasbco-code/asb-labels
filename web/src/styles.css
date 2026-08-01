@@ -62,6 +62,8 @@ tr.unselected td:not(.chk) { opacity: 0.6; }
 .shipment-row:hover { border-color: #8c9196; }
 .shipment-row .name { font-weight: 650; min-width: 90px; }
 .dim { color: #6d7175; font-size: 13px; }
+td.dim { color: #c2c5c8; }              /* zero in the Printed column */
+.allships { margin-top: 4px; font-size: 13px; padding: 6px 12px; }
 .badge {
   font-size: 11px; font-weight: 650; padding: 2px 8px; border-radius: 999px;
   background: #e4e5e7; color: #202223; text-transform: lowercase;
