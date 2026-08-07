@@ -1,5 +1,32 @@
 # asb-labels — build status
 
+## v9 (2026-08-06) — backstock tags (skis & snowboards)
+Big-text tags that replace hand-written masking tape on backstock skis/boards,
+printed in the same receive session as the barcode labels (tag + sticker each
+pair once). Same 3.5×1.125 stock, no barcode: brand small + year ('27) big on
+top, MODEL huge (shrink-to-fit, never wraps), size large below.
+- Shipment view gains a collapsed "Backstock tags (N ski/board items) ▸"
+  button — only for rows whose productType ends in "Skis"/"Snowboards"
+  (excludes Ski Bags/Straps); jackets etc. never show it. Seasonal feature,
+  stays out of the way the rest of the year.
+- Fields are PARSED GUESSES, all editable before printing: brand = vendor
+  minus " Skis/Snowboards"; year = bare 20xx product tag (fallback title);
+  size = the cm variant option; model = title minus vendor (incl. slash-chunk
+  vendors like SMC/Axis), parentheticals, year, and filler words. Shorten
+  model to "BP88" by hand if wanted — no abbreviation dictionary.
+- One tag per PAIR: tag qty defaults from the row's Print column, so it
+  inherits the accepted−printed delta. No separate printed-memory for tags
+  ("Use print counts" re-syncs; tags are cheap to reprint). "+ Add tag" =
+  blank manual row (year sticky) for anything the type filter misses.
+- fitTagModels() measures offscreen (print sheet is display:none) and MUST
+  clear its inline style before window.print().
+- Query change: product { title vendor productType tags } — no new scopes.
+- Tag template mirrored into label-preview.html ("Backstock tags" checkbox);
+  keep in sync with styles.css (.label.tag).
+Verified against a stubbed Admin API (parse fields, per-row edit, print 5
+tags, add-row, count re-sync, barcode-flow regression). NOT yet printed on
+the real Zebra — test one tag before a full run.
+
 ## v8 (2026-07-31) — under-printing fixes (T0602 / T0586 incident)
 Two shipments (400 & 800 units) under-printed. Root causes + fixes:
 1. **`lineItems(first: 250)` silently truncated big shipments** — every line

@@ -65,6 +65,17 @@
                     color: #b00; font-size: 8pt; font-weight: 600; text-align: center;
                     border: 1px dashed #e0a; border-radius: 4px; }
 
+  /* Backstock tag (skis & boards): big text, no barcode. KEEP IN SYNC with
+     web/src/styles.css (.label.tag). */
+  .label.tag { justify-content: space-between; gap: 0.02in; }
+  .label.tag .tag-top   { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: baseline; gap: 0.2in; }
+  .label.tag .tag-brand { font-size: 10pt; font-weight: 600; line-height: 1; }
+  .label.tag .tag-year  { font-size: 16pt; font-weight: 800; line-height: 1; }
+  .label.tag .tag-model { flex: 0 1 auto; font-size: 30pt; font-weight: 800; line-height: 0.95;
+                          letter-spacing: -0.5px; text-transform: uppercase;
+                          white-space: nowrap; overflow: hidden; }
+  .label.tag .tag-size  { flex: 0 0 auto; font-size: 18pt; font-weight: 800; line-height: 1; }
+
   /* ---- Print: only labels, exact stock size, one label per page ------- */
   /* The @page rule is injected by render() with LITERAL sizes — var() does
      not work inside @page and the browser silently drops the rule. */
@@ -99,6 +110,9 @@
     <label>Show text under bars
       <input id="showval" type="checkbox" checked />
     </label>
+    <label>Backstock tags
+      <input id="showtags" type="checkbox" />
+    </label>
     <button onclick="window.print()">Print</button>
     <button class="secondary" onclick="render()">Re-render</button>
     <span class="hint">Sample data only. Each accepted unit = one label. Scan label&nbsp;#1 before a full run.</span>
@@ -119,6 +133,15 @@
     { style: "Patagonia Women's Down Sweater Hoody Insulated",   meta: "Pigeon Blue · Medium",           barcode: "889587654321", price: 189.00, retail: 279.00, qty: 1 }, // long name + markdown
     { style: "Smartwool Hike Light Cushion Crew",                meta: "Grey · L",                       barcode: "042000998877", price: 23.95,  retail: null,   qty: 1 },
     { style: "Darn Tough Hiker",                                 meta: "Olive · S",                      barcode: "",             price: 25.00,  retail: null,   qty: 1 }, // missing barcode
+  ];
+
+  // Backstock tag samples — worst cases: long model (must auto-shrink),
+  // short abbreviation (prints huge), missing year.
+  const SAMPLE_TAGS = [
+    { brand: "Blizzard", model: "Black Pearl 88",           year: "'27", size: "152cm", qty: 1 },
+    { brand: "Blizzard", model: "BP88",                     year: "'27", size: "158cm", qty: 1 },
+    { brand: "Salomon",  model: "QST Lumen 98 Extra Long",  year: "'26", size: "169cm", qty: 1 }, // shrink test
+    { brand: "K2",       model: "Lil Mini",                 year: "",    size: "110cm", qty: 1 }, // no year
   ];
 
   function money(n) { return "$" + Number(n).toFixed(2); }
@@ -157,6 +180,47 @@
         sheet.appendChild(labelCell(row, barWidth, showVal));
       }
     }
+
+    // Backstock tags (one per pair). Sheet is visible on screen, so the
+    // shrink-to-fit measuring works directly — the app measures offscreen.
+    if (document.getElementById("showtags").checked) {
+      for (const t of SAMPLE_TAGS) {
+        for (let i = 0; i < t.qty; i++) sheet.appendChild(tagCell(t));
+      }
+      for (const m of sheet.querySelectorAll(".tag-model")) {
+        let pt = 30;
+        m.style.fontSize = pt + "pt";
+        while (pt > 12 && m.scrollWidth > m.clientWidth + 1) {
+          pt -= 2;
+          m.style.fontSize = pt + "pt";
+        }
+      }
+    }
+  }
+
+  // Mirrors the app's tagCell(): brand small + year big, MODEL huge, size large.
+  function tagCell(t) {
+    const el = document.createElement("div");
+    el.className = "label tag";
+    const top = document.createElement("div");
+    top.className = "tag-top";
+    const brand = document.createElement("span");
+    brand.className = "tag-brand";
+    brand.textContent = t.brand || "";
+    const year = document.createElement("span");
+    year.className = "tag-year";
+    year.textContent = t.year || "";
+    top.append(brand, year);
+    el.appendChild(top);
+    const model = document.createElement("div");
+    model.className = "tag-model";
+    model.textContent = t.model || "";
+    el.appendChild(model);
+    const size = document.createElement("div");
+    size.className = "tag-size";
+    size.textContent = t.size || "";
+    el.appendChild(size);
+    return el;
   }
 
   // Build one label. Mirrors the real app's labelCell():
@@ -238,6 +302,7 @@
   document.getElementById("stock").addEventListener("change", render);
   document.getElementById("barw").addEventListener("change", render);
   document.getElementById("showval").addEventListener("change", render);
+  document.getElementById("showtags").addEventListener("change", render);
   render();
 </script>
 </body>

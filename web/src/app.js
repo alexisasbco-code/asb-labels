@@ -3,7 +3,7 @@
 
 // Shown in the topbar so it's always obvious WHICH deploy the browser loaded
 // (GitHub Pages + the admin iframe cache aggressively). Bump on every deploy.
-const APP_VERSION = "v8";
+const APP_VERSION = "v9";
 
 // ---------------------------------------------------------------------------
 // Shopify Admin API (Direct API access — same helper as the bins app)
@@ -97,7 +97,7 @@ async function fetchShipmentLines(id) {
                   price
                   compareAtPrice
                   selectedOptions { name value }
-                  product { title }
+                  product { title vendor productType tags }
                 }
               }
             }
@@ -232,6 +232,119 @@ function labelCell(row) {
 }
 
 // ---------------------------------------------------------------------------
+// Backstock tags (skis & snowboards)
+// ---------------------------------------------------------------------------
+// Big-text tape replacement for backstock: brand small, MODEL huge, year as
+// '27, size large. No barcode, no price — readable across the backstock room.
+// Fields are PARSED GUESSES from the catalog and always editable in the UI
+// before printing (catalog titles carry filler the tag doesn't want).
+
+// Rows that get a tag: product types like "Flat Skis", "System Skis",
+// "Snowboards" — but not "Ski Bags" / "Ski Straps" (they don't END in the
+// word) and not apparel.
+function isTaggableType(ptype) {
+  return /(skis|snowboards)\s*$/i.test(ptype || "");
+}
+
+// "K2 Skis" / "Salomon Snowboards" → "K2" / "Salomon".
+function brandFromVendor(vendor) {
+  return String(vendor || "").replace(/\s+(skis|snowboards)\s*$/i, "").trim();
+}
+
+// Model year as '27. Source: a bare "2027" product tag (the shop tags every
+// product with its year); fallback to a 20xx in the title.
+function yearFromProduct(p) {
+  const yrs = (p?.tags || [])
+    .map((t) => /^20(\d\d)$/.exec(String(t).trim()))
+    .filter(Boolean)
+    .map((m) => m[1]);
+  if (yrs.length) return `'${yrs.sort().pop()}`;
+  const m = /\b20(\d\d)\b/.exec(p?.title || "");
+  return m ? `'${m[1]}` : "";
+}
+
+// Title → model: strip the vendor prefix, parentheticals ("(EL 4.5 GW
+// Bindings)"), the year, and catalog filler words. "Axis Free Team (System
+// Binding) Skis Kids 2023" → "Free Team". Right ~90% of the time; the field
+// is editable for the rest.
+const MODEL_FILLER =
+  /\b(skis?|snowboards?|flat|system|w|womens|women's|mens|men's|kids|youth|junior|jr|boys|girls)\b/gi;
+function modelFromTitle(title, vendor) {
+  let s = String(title || "").replace(/\([^)]*\)/g, " ");
+  // Prefix candidates include each slash-chunk: vendor "SMC/Axis" ships
+  // titles that start with just "Axis".
+  const pres = [vendor, brandFromVendor(vendor)]
+    .flatMap((p) => [p, ...String(p || "").split("/")])
+    .map((p) => String(p || "").trim())
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length);   // longest match wins
+  for (const pre of pres) {
+    if (s.toLowerCase().startsWith(pre.toLowerCase())) {
+      s = s.slice(pre.length);
+      break;
+    }
+  }
+  return s.replace(/\b20\d\d\b/g, " ").replace(MODEL_FILLER, " ")
+    .replace(/\s+/g, " ").trim();
+}
+
+// Size from the variant: prefer the option that looks like a length
+// ("152cm", "119cm (4.5)" → "119cm"), else an option literally named
+// size/length. Skis/boards always carry a cm option in this catalog.
+function sizeFromVariant(v) {
+  const opts = (v?.selectedOptions || []).filter((o) => o.value && !looksLikePrice(o.value));
+  const o =
+    opts.find((x) => /\d+(\.\d+)?\s*cm\b/i.test(x.value)) ||
+    opts.find((x) => /size|length/i.test(x.name || ""));
+  const val = (o?.value || "").replace(/\([^)]*\)/g, "").trim();
+  return val === "Default Title" ? "" : val;
+}
+
+function tagCell(t) {
+  const el = document.createElement("div");
+  el.className = "label tag";
+
+  const top = document.createElement("div");
+  top.className = "tag-top";
+  const brand = document.createElement("span");
+  brand.className = "tag-brand";
+  brand.textContent = t.brand || "";
+  const year = document.createElement("span");
+  year.className = "tag-year";
+  year.textContent = t.year || "";
+  top.append(brand, year);
+  el.appendChild(top);
+
+  const model = document.createElement("div");
+  model.className = "tag-model";
+  model.textContent = t.model || "";
+  el.appendChild(model);
+
+  const size = document.createElement("div");
+  size.className = "tag-size";
+  size.textContent = t.size || "";
+  el.appendChild(size);
+  return el;
+}
+
+// Shrink long model names until they fit the stock width. The print sheet is
+// display:none on screen, so it's made measurable (offscreen) for the loop —
+// the inline style MUST be cleared before window.print() or the print-media
+// positioning would break.
+function fitTagModels(sheet) {
+  sheet.style.cssText = "display:block;position:absolute;left:-9999px;top:0;";
+  for (const m of sheet.querySelectorAll(".tag-model")) {
+    let pt = 30;
+    m.style.fontSize = pt + "pt";
+    while (pt > 12 && m.scrollWidth > m.clientWidth + 1) {
+      pt -= 2;
+      m.style.fontSize = pt + "pt";
+    }
+  }
+  sheet.style.cssText = "";
+}
+
+// ---------------------------------------------------------------------------
 // App state + rendering
 // ---------------------------------------------------------------------------
 const app = document.getElementById("app");
@@ -242,6 +355,8 @@ const state = {
   search: "",          // transfer search text
   shipment: null,      // selected shipment w/ line items
   rows: [],            // [{style, meta, barcode, accepted, qty, selected}]
+  tags: null,          // backstock tag rows, built on first expand
+  tagsOpen: false,     // tags section expanded? (collapsed 9 months a year)
   message: "",
   error: "",
 };
@@ -348,7 +463,30 @@ function lineToRow(li, shipName) {
     printed,
     qty: Math.max(0, accepted - printed),  // editable per row
     selected: true,             // checkbox: include this row when printing
+    // Backstock-tag source data (skis & snowboards only).
+    taggable: isTaggableType(v?.product?.productType),
+    vendor: v?.product?.vendor || "",
+    year: yearFromProduct(v?.product),
+    size: sizeFromVariant(v),
   };
+}
+
+// One editable tag row per taggable shipment line. Tag qty starts at the
+// row's Print count — the accepted-minus-printed delta — so repeat receive
+// sessions default to tagging only the new pairs. `src` remembers the source
+// row so "Use print counts" can re-sync after edits (null = manual row).
+function buildTagRows() {
+  return state.rows
+    .map((r, i) => ({r, i}))
+    .filter(({r}) => r.taggable)
+    .map(({r, i}) => ({
+      src: i,
+      brand: brandFromVendor(r.vendor),
+      model: modelFromTitle(r.style, r.vendor),
+      year: r.year,
+      size: r.size,
+      qty: r.qty,
+    }));
 }
 
 async function openShipment(id) {
@@ -359,6 +497,8 @@ async function openShipment(id) {
     const s = await fetchShipmentLines(id);
     state.shipment = s;
     state.rows = (s?.lines || []).map((li) => lineToRow(li));
+    state.tags = null;
+    state.tagsOpen = false;
     state.message = "";
   } catch (err) {
     state.error = `Couldn't load shipment: ${err.message}`;
@@ -383,6 +523,8 @@ async function openTransfer(id) {
     }
     state.shipment = {name: `${t?.name || "Transfer"} — all shipments`, status: t?.status || ""};
     state.rows = rows;
+    state.tags = null;
+    state.tagsOpen = false;
     state.message = "";
   } catch (err) {
     state.error = `Couldn't load transfer: ${err.message}`;
@@ -424,6 +566,70 @@ function printLabels() {
 
 function labelCount() {
   return state.rows.reduce((n, r) => n + (r.selected && r.barcode ? r.qty : 0), 0);
+}
+
+function tagCount() {
+  return (state.tags || []).reduce((n, t) => n + t.qty, 0);
+}
+
+// One tag per PAIR (a shipment unit = one pair of skis / one board), so no
+// per-unit expansion beyond qty. No printed-memory here: tag qty inherits the
+// delta by defaulting from the Print column, and tags are cheap to reprint.
+function printTags() {
+  const printable = (state.tags || []).filter(
+    (t) => t.qty > 0 && (t.model || t.brand || t.size)
+  );
+  printSheet.innerHTML = "";
+  for (const t of printable) {
+    for (let i = 0; i < t.qty; i++) printSheet.appendChild(tagCell(t));
+  }
+  fitTagModels(printSheet);
+  window.print();
+  const total = printable.reduce((n, t) => n + t.qty, 0);
+  state.message = `Sent ${total} backstock tag${total === 1 ? "" : "s"} to the printer.`;
+  state.error = "";
+  render();
+}
+
+// Backstock tags section, under the barcode table. Collapsed to one button
+// (backstock taping is seasonal — early fall + closeout, otherwise noise).
+// Only appears when the shipment actually has skis/boards on it.
+function tagsSection(rows) {
+  const taggable = rows.filter((r) => r.taggable).length;
+  if (!taggable && !(state.tags || []).length) return "";
+  if (!state.tagsOpen) {
+    return `<button class="secondary" data-tagstoggle>Backstock tags (${taggable} ski/board item${taggable === 1 ? "" : "s"}) ▸</button>`;
+  }
+  const tr = (state.tags || [])
+    .map(
+      (t, i) => `
+      <tr>
+        <td><input type="text" class="tag-in brand" data-tagfield="brand" data-tagidx="${i}" value="${esc(t.brand)}" /></td>
+        <td><input type="text" class="tag-in model" data-tagfield="model" data-tagidx="${i}" value="${esc(t.model)}" /></td>
+        <td><input type="text" class="tag-in year" data-tagfield="year" data-tagidx="${i}" value="${esc(t.year)}" placeholder="'27" /></td>
+        <td><input type="text" class="tag-in size" data-tagfield="size" data-tagidx="${i}" value="${esc(t.size)}" /></td>
+        <td class="num"><input type="number" min="0" max="999" value="${t.qty}" data-tagqty="${i}" /></td>
+      </tr>`
+    )
+    .join("");
+  const n = tagCount();
+  return `
+    <div class="card">
+      <h2>Backstock tags <button class="secondary tags-collapse" data-tagstoggle>▴ hide</button></h2>
+      <div class="status">Big-text tape replacement — one tag per <b>pair</b>. Fields are parsed guesses: fix the model here (or shorten it — “BP88” prints just as big). Tag counts started from the Print column.</div>
+      <table>
+        <thead><tr>
+          <th>Brand</th><th>Model</th><th>Year</th><th>Size</th><th class="num">Tags</th>
+        </tr></thead>
+        <tbody>${tr}</tbody>
+      </table>
+      <div class="printbar">
+        <button data-printtags ${n ? "" : "disabled"}>Print ${n} tag${n === 1 ? "" : "s"}</button>
+        <button class="secondary" data-tagadd>+ Add tag</button>
+        <button class="secondary" data-tagsync title="Reset every tag count to its row's current Print count">Use print counts</button>
+        <span class="count">same 3-1/2 × 1-1/8 in stock · no barcode</span>
+      </div>
+    </div>`;
 }
 
 function render() {
@@ -512,7 +718,8 @@ function render() {
           ${anyPrinted ? `<button class="secondary" data-resetprinted title="Clear the printed-label memory for these rows so Print resets to the full accepted count">Forget printed</button>` : ""}
           <span class="count">${selectedCount} of ${rows.length} items selected · 3-1/2 × 1-1/8 in · Code128</span>
         </div>
-      </div>`;
+      </div>
+      ${tagsSection(rows)}`;
   }
 
   app.innerHTML = `
@@ -560,10 +767,38 @@ app.addEventListener("click", (e) => {
     render();
     return;
   }
+  if (e.target.closest("[data-tagstoggle]")) {
+    state.tagsOpen = !state.tagsOpen;
+    if (state.tagsOpen && !state.tags) state.tags = buildTagRows();
+    render();
+    return;
+  }
+  if (e.target.closest("[data-tagadd]")) {
+    // Blank manual row — covers anything the type filter missed. Year is
+    // sticky from the rows above (it's '27 for weeks at a time).
+    state.tags = state.tags || [];
+    state.tags.push({
+      src: null, brand: "", model: "",
+      year: state.tags.find((t) => t.year)?.year || "",
+      size: "", qty: 1,
+    });
+    render();
+    return;
+  }
+  if (e.target.closest("[data-tagsync]")) {
+    for (const t of state.tags || []) {
+      if (t.src != null && state.rows[t.src]) t.qty = state.rows[t.src].qty;
+    }
+    render();
+    return;
+  }
+  if (e.target.closest("[data-printtags]")) return printTags();
   if (e.target.closest("[data-refresh]")) return loadTransfers();
   if (e.target.closest("[data-back]")) {
     state.shipment = null;
     state.rows = [];
+    state.tags = null;
+    state.tagsOpen = false;
     render();
     return;
   }
@@ -587,6 +822,23 @@ app.addEventListener("input", (e) => {
     if (btn) {
       const n = labelCount();
       btn.textContent = `Print ${n} label${n === 1 ? "" : "s"}`;
+      btn.disabled = !n;
+    }
+    return;
+  }
+  // Tag edits update state in place (no render — it would steal focus).
+  const tf = e.target.closest("[data-tagfield]");
+  if (tf) {
+    state.tags[Number(tf.dataset.tagidx)][tf.dataset.tagfield] = tf.value;
+    return;
+  }
+  const tq = e.target.closest("[data-tagqty]");
+  if (tq) {
+    state.tags[Number(tq.dataset.tagqty)].qty = Math.max(0, Number(tq.value) || 0);
+    const btn = app.querySelector("[data-printtags]");
+    if (btn) {
+      const n = tagCount();
+      btn.textContent = `Print ${n} tag${n === 1 ? "" : "s"}`;
       btn.disabled = !n;
     }
   }
